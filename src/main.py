@@ -260,8 +260,8 @@ control_clients: list[WebSocket] = []
 
 
 async def broadcast_performance():
-    while True:
-        try:
+    try:
+        while True:
             for client in control_clients:
                 await client.send_json({
                     "type": "performance",
@@ -271,8 +271,8 @@ async def broadcast_performance():
                     }
                 })
             await aio.sleep(1)
-        except Exception as e:
-            logger.exception(e)
+    except Exception as e:
+        logger.warning("Performance broadcasting loop excepted!")
 
 
 @app.websocket("/control")
@@ -283,6 +283,7 @@ async def websocket_control(ws: WebSocket):
     logger.info("Client connect to websocket control")
     try:
         while True:
+            logger.debug("Broadcasting settings")
             for client in control_clients:
                 await client.send_json({
                     "type": "settings",
