@@ -1,3 +1,5 @@
+picamera
 fastapi
+websockets
 uvicorn[standard]
 slowapi
