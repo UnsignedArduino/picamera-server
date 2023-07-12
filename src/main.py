@@ -1,15 +1,17 @@
-from logger import create_logger
+import asyncio as aio
 import logging
-from picamera import PiCamera
+from contextlib import asynccontextmanager
 from io import BytesIO
+
+import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from contextlib import asynccontextmanager
-import asyncio as aio
-import uvicorn
+from picamera import PiCamera
 from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
+
+from logger import create_logger
 
 logger = create_logger(name=__name__, level=logging.DEBUG)
 
@@ -18,6 +20,7 @@ CAMERA_PERIOD = 0.1
 
 camera = None
 last_frame = bytes()
+
 
 async def capture_frames():
     global last_frame
@@ -31,6 +34,7 @@ async def capture_frames():
         last_frame = buffer.read()
         await aio.sleep(CAMERA_PERIOD)
 
+
 @asynccontextmanager
 async def app_lifespan(_: FastAPI):
     global camera
@@ -39,6 +43,7 @@ async def app_lifespan(_: FastAPI):
     aio.create_task(capture_frames())
     yield
     camera.close()
+
 
 limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(lifespan=app_lifespan)
