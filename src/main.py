@@ -6,7 +6,7 @@ from io import BytesIO
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from picamera import PiCamera
+from picamera import PiCamera, PiCameraValueError
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
@@ -74,7 +74,7 @@ settings = {
             "deinterlace2"
         ]
     },
-    "Iso": {
+    "ISO": {
         "selected": 0,
         "available": [
             0,
@@ -88,7 +88,7 @@ settings = {
         ]
     },
     "Resolution": {
-        "selected": (720, 480),
+        "selected": "720x480",
         "available": [
             "128x96",
             "160x120",
@@ -199,11 +199,23 @@ async def capture_frames():
         await aio.sleep(CAMERA_PERIOD)
 
 
+def apply_settings(new_s):
+    camera.awb_mode = new_s["AWB_mode"]["selected"]
+    camera.brightness = new_s["Brightness"]["value"]
+    camera.contrast = new_s["Contrast"]["value"]
+    camera.image_effect = new_s["Effect"]["selected"]
+    camera.iso = int(new_s["ISO"]["selected"])
+    camera.resolution = tuple(
+        int(x) for x in tuple(new_s["Resolution"]["selected"].split("x")))
+    camera.saturation = new_s["Saturation"]["value"]
+
+
 @asynccontextmanager
 async def app_lifespan(_: FastAPI):
     global camera
     camera = PiCamera()
     camera.rotation = 180
+    apply_settings(settings)
     logger.debug("Initialized camera")
     aio.create_task(capture_frames())
     yield
@@ -239,6 +251,7 @@ control_clients: list[WebSocket] = []
 
 @app.websocket("/control")
 async def websocket_control(ws: WebSocket):
+    global settings
     await ws.accept()
     control_clients.append(ws)
     logger.info("Client connect to websocket control")
@@ -249,12 +262,26 @@ async def websocket_control(ws: WebSocket):
                     "type": "settings",
                     "settings": settings
                 })
+            logger.debug("Waiting for new settings")
             new_settings = await ws.receive_json()
             logger.debug("Received new settings to set")
-            await ws.send_json({
-                "type": "result",
-                "result": True,
-            })
+            try:
+                apply_settings(new_settings)
+            except PiCameraValueError as e:
+                logger.warning("Failed to set new settings")
+                logger.exception(e)
+                apply_settings(settings)
+                await ws.send_json({
+                    "type": "result",
+                    "result": False,
+                })
+            else:
+                logger.info("Set new settings successfully")
+                settings = new_settings
+                await ws.send_json({
+                    "type": "result",
+                    "result": True,
+                })
             await aio.sleep(CAMERA_PERIOD)
     except WebSocketDisconnect:
         logger.info("Client disconnected from websocket control")
