@@ -22,7 +22,7 @@ camera = None
 last_frame = bytes()
 
 settings = {
-    "awb_mode": {
+    "AWB_mode": {
         "selected": "auto",
         "available": [
             "off",
@@ -37,17 +37,17 @@ settings = {
             "horizon"
         ]
     },
-    "brightness": {
+    "Brightness": {
         "min": 0,
         "max": 100,
         "value": 50
     },
-    "contrast": {
+    "Contrast": {
         "min": -100,
         "max": 100,
         "value": 0
     },
-    "effect": {
+    "Effect": {
         "selected": "none",
         "available": [
             "none",
@@ -74,7 +74,7 @@ settings = {
             "deinterlace2"
         ]
     },
-    "iso": {
+    "Iso": {
         "selected": 0,
         "available": [
             0,
@@ -87,7 +87,7 @@ settings = {
             800
         ]
     },
-    "resolution": {
+    "Resolution": {
         "selected": (720, 480),
         "available": [
             "128x96",
@@ -178,23 +178,10 @@ settings = {
             "3600x2400"
         ]
     },
-    "saturation": {
+    "Saturation": {
         "min": -100,
         "max": 100,
         "value": 0
-    },
-    "servos": {
-        "enable": True,
-        "pan": {
-            "min": 0,
-            "max": 180,
-            "value": 90
-        },
-        "tilt": {
-            "min": 0,
-            "max": 60,
-            "value": 30
-        }
     }
 }
 
@@ -216,6 +203,7 @@ async def capture_frames():
 async def app_lifespan(_: FastAPI):
     global camera
     camera = PiCamera()
+    camera.rotation = 180
     logger.debug("Initialized camera")
     aio.create_task(capture_frames())
     yield
