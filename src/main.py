@@ -5,6 +5,7 @@ from io import BytesIO
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+import asyncio as aio
 import uvicorn
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
@@ -13,13 +14,29 @@ from slowapi.errors import RateLimitExceeded
 logger = create_logger(name=__name__, level=logging.DEBUG)
 
 RATE_LIMIT = "60/minute"
+CAMERA_PERIOD = 0.1
 
 camera = None
+last_frame = bytes()
+
+async def capture_frames():
+    global last_frame
+    logger.debug("Starting frame capture loop")
+    buffer = BytesIO()
+    while True:
+        buffer.seek(0)
+        buffer.truncate(0)
+        camera.capture(buffer, format="jpeg")
+        buffer.seek(0)
+        last_frame = buffer.read()
+        await aio.sleep(CAMERA_PERIOD)
 
 @asynccontextmanager
 async def app_lifespan(_: FastAPI):
     global camera
     camera = PiCamera()
+    logger.debug("Initialized camera")
+    aio.create_task(capture_frames())
     yield
     camera.close()
 
@@ -40,13 +57,9 @@ async def websocket_stream(ws: WebSocket):
     await ws.accept()
     logger.info("Client connected to websocket stream")
     try:
-        buffer = BytesIO()
         while True:
-            buffer.seek(0)
-            buffer.truncate(0)
-            camera.capture(buffer, format="jpeg")
-            buffer.seek(0)
-            await ws.send_bytes(buffer.read())
+            await ws.send_bytes(last_frame)
+            await aio.sleep(CAMERA_PERIOD)
     except WebSocketDisconnect:
         logger.info("Client disconnect from websocket stream")
 
