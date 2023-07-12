@@ -16,7 +16,6 @@ from logger import create_logger
 logger = create_logger(name=__name__, level=logging.DEBUG)
 
 RATE_LIMIT = "60/minute"
-CAMERA_PERIOD = 0.1
 
 camera = None
 last_frame = bytes()
@@ -196,7 +195,7 @@ async def capture_frames():
         camera.capture(buffer, format="jpeg")
         buffer.seek(0)
         last_frame = buffer.read()
-        await aio.sleep(CAMERA_PERIOD)
+        await aio.sleep(0)
 
 
 def apply_settings(new_s):
@@ -241,7 +240,7 @@ async def websocket_stream(ws: WebSocket):
     try:
         while True:
             await ws.send_bytes(last_frame)
-            await aio.sleep(CAMERA_PERIOD)
+            await aio.sleep(0)
     except WebSocketDisconnect:
         logger.info("Client disconnected from websocket stream")
 
@@ -282,7 +281,7 @@ async def websocket_control(ws: WebSocket):
                     "type": "result",
                     "result": True,
                 })
-            await aio.sleep(CAMERA_PERIOD)
+            await aio.sleep(0)
     except WebSocketDisconnect:
         logger.info("Client disconnected from websocket control")
     finally:
