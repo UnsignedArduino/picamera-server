@@ -2,6 +2,7 @@ import asyncio as aio
 import logging
 from contextlib import asynccontextmanager
 from io import BytesIO
+from time import time as unix
 
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -184,17 +185,21 @@ settings = {
     }
 }
 
+capture_fps = 0
+
 
 async def capture_frames():
-    global last_frame
+    global last_frame, capture_fps
     logger.debug("Starting frame capture loop")
     buffer = BytesIO()
     while True:
+        start = unix()
         buffer.seek(0)
         buffer.truncate(0)
         camera.capture(buffer, format="jpeg")
         buffer.seek(0)
         last_frame = buffer.read()
+        capture_fps = 1 / (unix() - start)
         await aio.sleep(0)
 
 
@@ -217,6 +222,7 @@ async def app_lifespan(_: FastAPI):
     apply_settings(settings)
     logger.debug("Initialized camera")
     aio.create_task(capture_frames())
+    aio.create_task(broadcast_performance())
     yield
     camera.close()
 
@@ -232,10 +238,13 @@ app.add_middleware(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+stream_clients: list[WebSocket] = []
+
 
 @app.websocket("/stream")
 async def websocket_stream(ws: WebSocket):
     await ws.accept()
+    stream_clients.append(ws)
     logger.info("Client connected to websocket stream")
     try:
         while True:
@@ -243,9 +252,27 @@ async def websocket_stream(ws: WebSocket):
             await aio.sleep(0)
     except WebSocketDisconnect:
         logger.info("Client disconnected from websocket stream")
+    finally:
+        stream_clients.remove(ws)
 
 
 control_clients: list[WebSocket] = []
+
+
+async def broadcast_performance():
+    while True:
+        try:
+            for client in control_clients:
+                await client.send_json({
+                    "type": "performance",
+                    "performance": {
+                        "Capture_FPS": round(capture_fps),
+                        "Connected_clients": len(stream_clients)
+                    }
+                })
+            await aio.sleep(1)
+        except Exception as e:
+            logger.exception(e)
 
 
 @app.websocket("/control")
