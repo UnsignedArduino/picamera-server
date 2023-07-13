@@ -25,6 +25,7 @@ capture_fps = 0
 settings = {
     "AWB_mode": {
         "selected": "auto",
+        "default": "auto",
         "available": [
             "off",
             "auto",
@@ -41,15 +42,18 @@ settings = {
     "Brightness": {
         "min": 0,
         "max": 100,
-        "value": 50
+        "value": 50,
+        "default": 50
     },
     "Contrast": {
         "min": -100,
         "max": 100,
-        "value": 0
+        "value": 0,
+        "default": 0
     },
     "Effect_(*in_captures_only)": {
         "selected": "none",
+        "default": "none",
         "available": [
             "none",
             "negative",
@@ -78,10 +82,12 @@ settings = {
     "Exposure_compensation_(1/6_stop)": {
         "min": -25,
         "max": 25,
-        "value": 0
+        "value": 0,
+        "default": 0
     },
     "Exposure_mode": {
         "selected": "auto",
+        "default": "auto",
         "available": [
             "off",
             "auto",
@@ -99,20 +105,23 @@ settings = {
         ]
     },
     "ISO": {
-        "selected": 0,
+        "selected": "0",
+        "default": "0",
+        "zero_is_auto": True,
         "available": [
-            0,
-            100,
-            200,
-            320,
-            400,
-            500,
-            640,
-            800
+            "0",
+            "100",
+            "200",
+            "320",
+            "400",
+            "500",
+            "640",
+            "800"
         ]
     },
     "Meter_mode": {
         "selected": "average",
+        "default": "average",
         "available": [
             "average",
             "spot",
@@ -122,6 +131,7 @@ settings = {
     },
     "Resolution": {
         "selected": "720x480",
+        "default": "720x480",
         "available": [
             "128x96",
             "160x120",
@@ -214,17 +224,21 @@ settings = {
     "Saturation": {
         "min": -100,
         "max": 100,
-        "value": 0
+        "value": 0,
+        "default": 0
     },
     "Sharpness": {
         "min": -100,
         "max": 100,
-        "value": 0
+        "value": 0,
+        "default": 0
     },
     "Shutter_speed_(µs)": {
         "min": 0,
         "max": 33333,
-        "value": 0
+        "value": 0,
+        "default": 0,
+        "zero_is_auto": True
     }
 }
 stream_fps = 0
