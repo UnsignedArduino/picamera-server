@@ -21,6 +21,7 @@ RATE_LIMIT = "60/minute"
 camera = None
 last_frame = bytes()
 
+capture_fps = 0
 settings = {
     "AWB_mode": {
         "selected": "auto",
@@ -47,31 +48,54 @@ settings = {
         "max": 100,
         "value": 0
     },
-    "Effect": {
+    "Effect_(*in_captures_only)": {
         "selected": "none",
         "available": [
             "none",
             "negative",
             "solarize",
-            "sketch",
-            "denoise",
-            "emboss",
-            "oilpaint",
-            "hatch",
-            "gpen",
-            "pastel",
-            "watercolor",
-            "film",
-            "blur",
-            "saturation",
-            "colorswap",
-            "washedout",
-            "posterise",
-            "colorpoint",
-            "colorbalance",
-            "cartoon",
-            "deinterlace1",
-            "deinterlace2"
+            "sketch*",
+            "denoise*",
+            "emboss*",
+            "oilpaint*",
+            "hatch*",
+            "gpen*",
+            "pastel*",
+            "watercolor*",
+            "film*",
+            "blur*",
+            "saturation*",
+            "colorswap*",
+            "washedout*",
+            "posterise*",
+            "colorpoint*",
+            "colorbalance*",
+            "cartoon*",
+            "deinterlace1*",
+            "deinterlace2*"
+        ]
+    },
+    "Exposure_compensation_(1/6_stop)": {
+        "min": -25,
+        "max": 25,
+        "value": 0
+    },
+    "Exposure_mode": {
+        "selected": "auto",
+        "available": [
+            "off",
+            "auto",
+            "night",
+            "nightpreview",
+            "backlight",
+            "spotlight",
+            "sports",
+            "snow",
+            "beach",
+            "verylong",
+            "fixedfps",
+            "antishake",
+            "fireworks"
         ]
     },
     "ISO": {
@@ -85,6 +109,15 @@ settings = {
             500,
             640,
             800
+        ]
+    },
+    "Meter_mode": {
+        "selected": "average",
+        "available": [
+            "average",
+            "spot",
+            "matrix",
+            "backlit"
         ]
     },
     "Resolution": {
@@ -182,44 +215,96 @@ settings = {
         "min": -100,
         "max": 100,
         "value": 0
+    },
+    "Sharpness": {
+        "min": -100,
+        "max": 100,
+        "value": 0
+    },
+    "Shutter_speed_(µs)": {
+        "min": 0,
+        "max": 33333,
+        "value": 0
     }
 }
-
-capture_fps = 0
+stream_fps = 0
+stop_capture = False
+stopped_captures = False
 
 
 async def capture_frames():
-    global last_frame, capture_fps
+    global last_frame, capture_fps, stop_capture, stopped_captures
     logger.debug("Starting frame capture loop")
     buffer = BytesIO()
+    stop_capture = False
+    stopped_captures = False
     while True:
-        start = unix()
-        buffer.seek(0)
-        buffer.truncate(0)
-        camera.capture(buffer, format="jpeg")
-        buffer.seek(0)
-        last_frame = buffer.read()
-        capture_fps = 1 / (unix() - start)
-        await aio.sleep(0)
+        for _ in camera.capture_continuous(buffer, "jpeg",
+                                           use_video_port=True):
+            start = unix()
+            buffer.seek(0)
+            last_frame = buffer.read()
+            buffer.seek(0)
+            buffer.truncate(0)
+            await aio.sleep(0)
+            capture_fps = 1 / (unix() - start)
+            if stop_capture:
+                break
+        logger.debug("Stopping capture momentarily")
+        stopped_captures = True
+        while stop_capture:
+            await aio.sleep(0.2)
+        stopped_captures = False
+        logger.debug("Resuming capture")
 
 
-def apply_settings(new_s):
+async def pause_captures():
+    global stop_capture
+    logger.debug("Signaling to pause captures")
+    stop_capture = True
+    while not stopped_captures:
+        await aio.sleep(0.1)
+    logger.debug("Paused captures")
+
+
+async def resume_captures():
+    global stop_capture
+    logger.debug("Signaling to resume captures")
+    stop_capture = False
+    while stopped_captures:
+        await aio.sleep(0.1)
+    logger.debug("Resumed captures")
+
+
+async def apply_settings(new_s, pause=True):
+    if pause:
+        await pause_captures()
     camera.awb_mode = new_s["AWB_mode"]["selected"]
     camera.brightness = new_s["Brightness"]["value"]
     camera.contrast = new_s["Contrast"]["value"]
-    camera.image_effect = new_s["Effect"]["selected"]
+    camera.image_effect = new_s["Effect_(*in_captures_only)"][
+        "selected"].replace("*", "")
+    camera.exposure_compensation = new_s["Exposure_compensation_(1/6_stop)"][
+        "value"]
+    camera.exposure_mode = new_s["Exposure_mode"]["selected"]
     camera.iso = int(new_s["ISO"]["selected"])
+    camera.meter_mode = new_s["Meter_mode"]["selected"]
     camera.resolution = tuple(
         int(x) for x in tuple(new_s["Resolution"]["selected"].split("x")))
     camera.saturation = new_s["Saturation"]["value"]
+    camera.sharpness = new_s["Sharpness"]["value"]
+    camera.shutter_speed = new_s["Shutter_speed_(µs)"]["value"]
+    if pause:
+        await resume_captures()
 
 
 @asynccontextmanager
 async def app_lifespan(_: FastAPI):
     global camera
     camera = PiCamera()
-    camera.rotation = 180
-    apply_settings(settings)
+    camera.vflip = True
+    camera.hflip = True
+    await apply_settings(settings, False)
     logger.debug("Initialized camera")
     aio.create_task(capture_frames())
     aio.create_task(broadcast_performance())
@@ -243,13 +328,16 @@ stream_clients: list[WebSocket] = []
 
 @app.websocket("/stream")
 async def websocket_stream(ws: WebSocket):
+    global stream_fps
     await ws.accept()
     stream_clients.append(ws)
     logger.info("Client connected to websocket stream")
     try:
         while True:
+            start = unix()
             await ws.send_bytes(last_frame)
             await aio.sleep(0)
+            stream_fps = 1 / (unix() - start)
     except WebSocketDisconnect:
         logger.info("Client disconnected from websocket stream")
     finally:
@@ -260,19 +348,20 @@ control_clients: list[WebSocket] = []
 
 
 async def broadcast_performance():
-    try:
-        while True:
-            for client in control_clients:
+    while True:
+        for client in control_clients:
+            try:
                 await client.send_json({
                     "type": "performance",
                     "performance": {
                         "Capture_FPS": round(capture_fps),
+                        "Stream_FPS": round(stream_fps),
                         "Connected_clients": len(stream_clients)
                     }
                 })
-            await aio.sleep(1)
-    except Exception as e:
-        logger.warning("Performance broadcasting loop excepted!")
+            except WebSocketDisconnect:
+                pass
+        await aio.sleep(1)
 
 
 @app.websocket("/control")
@@ -293,11 +382,11 @@ async def websocket_control(ws: WebSocket):
             new_settings = await ws.receive_json()
             logger.debug("Received new settings to set")
             try:
-                apply_settings(new_settings)
+                await apply_settings(new_settings)
             except PiCameraValueError as e:
                 logger.warning("Failed to set new settings")
                 logger.exception(e)
-                apply_settings(settings)
+                await apply_settings(settings)
                 await ws.send_json({
                     "type": "result",
                     "result": False,
