@@ -12,6 +12,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
+from PCA9685 import PCA9685
 from logger import create_logger
 
 logger = create_logger(name=__name__, level=logging.DEBUG)
@@ -19,6 +20,7 @@ logger = create_logger(name=__name__, level=logging.DEBUG)
 RATE_LIMIT = "60/minute"
 
 camera = None
+pwm = None
 last_frame = bytes()
 
 capture_fps = 0
@@ -241,6 +243,20 @@ settings = {
         "zero_is_auto": True
     }
 }
+pan_tilt = {
+"Pan": {
+        "min": 0,
+        "max": 180,
+        "value": 90,
+        "default": 90
+    },
+    "Tilt": {
+        "min": 0,
+        "max": 80,
+        "value": 40,
+        "default": 40
+    }
+}
 stream_fps = 0
 stop_capture = False
 stopped_captures = False
@@ -312,17 +328,26 @@ async def apply_settings(new_s, pause=True):
         await resume_captures()
 
 
+async def apply_pan_tilt(new_pt):
+    pwm.setRotationAngle(0, new_pt["Tilt"]["max"] - new_pt["Tilt"]["value"])
+    pwm.setRotationAngle(1, new_pt["Pan"]["max"] - new_pt["Pan"]["value"])
+
+
 @asynccontextmanager
 async def app_lifespan(_: FastAPI):
-    global camera
+    global camera, pwm
     camera = PiCamera()
     camera.vflip = True
     camera.hflip = True
     await apply_settings(settings, False)
-    logger.debug("Initialized camera")
     aio.create_task(capture_frames())
+    logger.debug("Initialized camera")
+    pwm = PCA9685()
+    pwm.setPWMFreq(50)
+    logger.debug("Initialized pan-tilt controller")
     yield
     camera.close()
+    pwm.exit_PCA9685()
 
 
 limiter = Limiter(key_func=get_remote_address)
@@ -360,21 +385,29 @@ async def websocket_stream(ws: WebSocket):
 control_clients: list[WebSocket] = []
 
 
+async def broadcast_control(message: object):
+    for client in control_clients:
+        await client.send_json(message)
+
+
 @app.websocket("/control")
 async def websocket_control(ws: WebSocket):
-    global settings
+    global settings, pan_tilt
     await ws.accept()
     control_clients.append(ws)
     logger.info("Client connect to websocket control")
     try:
         while True:
-            logger.debug("Broadcasting settings")
-            for client in control_clients:
-                await client.send_json({
+            logger.debug("Broadcasting settings and pan-tilt")
+            await broadcast_control({
                     "type": "settings",
                     "settings": settings
                 })
-            logger.debug("Waiting for new settings")
+            await broadcast_control({
+                    "type": "pan_tilt",
+                    "pan_tilt": pan_tilt
+                })
+            logger.debug("Waiting for new message")
             msg = await ws.receive_json()
             if msg["type"] == "settings":
                 logger.debug("Received new settings to set")
@@ -384,17 +417,26 @@ async def websocket_control(ws: WebSocket):
                     logger.warning("Failed to set new settings")
                     logger.exception(e)
                     await apply_settings(settings)
-                    await ws.send_json({
+                    await broadcast_control({
                         "type": "status",
                         "status": "Failed to update settings!",
                     })
                 else:
                     logger.info("Set new settings successfully")
                     settings = msg["settings"]
-                    await ws.send_json({
+                    await broadcast_control({
                         "type": "status",
                         "status": "Successfully updated settings!",
                     })
+            elif msg["type"] == "pan_tilt":
+                logger.debug("New pan-tilt")
+                await apply_pan_tilt(msg["pan_tilt"])
+                logger.info("Set new pan-tilt successfully")
+                pan_tilt = msg["pan_tilt"]
+                await broadcast_control({
+                    "type": "status",
+                    "status": "Successfully updated camera direction!",
+                })
             else:
                 logger.warning(f"Received message with unknown type: {msg['type']}")
             await aio.sleep(0)

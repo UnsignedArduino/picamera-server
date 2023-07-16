@@ -3,3 +3,4 @@ fastapi
 websockets
 uvicorn[standard]
 slowapi
+smbus
