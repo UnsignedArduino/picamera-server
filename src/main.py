@@ -321,7 +321,6 @@ async def app_lifespan(_: FastAPI):
     await apply_settings(settings, False)
     logger.debug("Initialized camera")
     aio.create_task(capture_frames())
-    aio.create_task(broadcast_performance())
     yield
     camera.close()
 
@@ -361,23 +360,6 @@ async def websocket_stream(ws: WebSocket):
 control_clients: list[WebSocket] = []
 
 
-async def broadcast_performance():
-    while True:
-        for client in control_clients:
-            try:
-                await client.send_json({
-                    "type": "performance",
-                    "performance": {
-                        "Capture_FPS": round(capture_fps),
-                        "Stream_FPS": round(stream_fps),
-                        "Connected_clients": len(stream_clients)
-                    }
-                })
-            except WebSocketDisconnect:
-                pass
-        await aio.sleep(1)
-
-
 @app.websocket("/control")
 async def websocket_control(ws: WebSocket):
     global settings
@@ -403,15 +385,15 @@ async def websocket_control(ws: WebSocket):
                     logger.exception(e)
                     await apply_settings(settings)
                     await ws.send_json({
-                        "type": "result",
-                        "result": "Failed to update settings!",
+                        "type": "status",
+                        "status": "Failed to update settings!",
                     })
                 else:
                     logger.info("Set new settings successfully")
                     settings = msg["settings"]
                     await ws.send_json({
-                        "type": "result",
-                        "result": "Successfully updated settings!",
+                        "type": "status",
+                        "status": "Successfully updated settings!",
                     })
             else:
                 logger.warning(f"Received message with unknown type: {msg['type']}")
