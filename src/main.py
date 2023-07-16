@@ -1,5 +1,6 @@
 import asyncio as aio
 import logging
+from base64 import b64encode
 from contextlib import asynccontextmanager
 from io import BytesIO
 from time import time as unix
@@ -262,6 +263,13 @@ stop_capture = False
 stopped_captures = False
 
 
+async def capture():
+    buf = BytesIO()
+    camera.capture(buf, "jpeg")
+    buf.seek(0)
+    return b64encode(buf.read()).decode("utf-8")
+
+
 async def capture_frames():
     global last_frame, capture_fps, stop_capture, stopped_captures
     logger.debug("Starting frame capture loop")
@@ -436,6 +444,16 @@ async def websocket_control(ws: WebSocket):
                 await broadcast_control({
                     "type": "status",
                     "status": "Successfully updated camera direction!",
+                })
+            elif msg["type"] == "photo_request":
+                logger.info("Photo request!")
+                await broadcast_control({
+                    "type": "photo_request_result",
+                    "photo_request_result": await capture(),
+                })
+                await broadcast_control({
+                    "type": "status",
+                    "status": "Successfully taken photo!",
                 })
             else:
                 logger.warning(f"Received message with unknown type: {msg['type']}")
