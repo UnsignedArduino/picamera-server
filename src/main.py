@@ -393,25 +393,28 @@ async def websocket_control(ws: WebSocket):
                     "settings": settings
                 })
             logger.debug("Waiting for new settings")
-            new_settings = await ws.receive_json()
-            logger.debug("Received new settings to set")
-            try:
-                await apply_settings(new_settings)
-            except PiCameraValueError as e:
-                logger.warning("Failed to set new settings")
-                logger.exception(e)
-                await apply_settings(settings)
-                await ws.send_json({
-                    "type": "result",
-                    "result": False,
-                })
+            msg = await ws.receive_json()
+            if msg["type"] == "settings":
+                logger.debug("Received new settings to set")
+                try:
+                    await apply_settings(msg["settings"])
+                except PiCameraValueError as e:
+                    logger.warning("Failed to set new settings")
+                    logger.exception(e)
+                    await apply_settings(settings)
+                    await ws.send_json({
+                        "type": "result",
+                        "result": "Failed to update settings!",
+                    })
+                else:
+                    logger.info("Set new settings successfully")
+                    settings = msg["settings"]
+                    await ws.send_json({
+                        "type": "result",
+                        "result": "Successfully updated settings!",
+                    })
             else:
-                logger.info("Set new settings successfully")
-                settings = new_settings
-                await ws.send_json({
-                    "type": "result",
-                    "result": True,
-                })
+                logger.warning(f"Received message with unknown type: {msg['type']}")
             await aio.sleep(0)
     except WebSocketDisconnect:
         logger.info("Client disconnected from websocket control")
