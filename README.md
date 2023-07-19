@@ -1,5 +1,9 @@
 # picamera-server-api
 
+> Visit [https://picamera-server.vercel.app/](https://picamera-server.vercel.app/) to view your Picamera after 
+> following the [instructions below](https://github.com/UnsignedArduino/picamera-server-api/blob/main/README.md#install) to 
+> start the backend server on the Raspberry Pi!
+
 The backend to view and control your PiCamera on your Raspberry Pi, with support for the Waveshare Pan-tilt HAT!
 
 The frontend can be found 
