@@ -1,13 +1,13 @@
-# picamera-server-api
+# picamera-server
 
-> Visit [https://picamera-server.vercel.app/](https://picamera-server.vercel.app/) to view your Picamera after 
-> following the [instructions below](https://github.com/UnsignedArduino/picamera-server-api/blob/main/README.md#install) to 
-> start the backend server on the Raspberry Pi!
+> Visit [https://picamera-server-viewer.vercel.app/](https://picamera-server-viewer.vercel.app/) to view your
+> Picamera after following the [instructions](https://github.com/UnsignedArduino/picamera-server/blob/main/README.md#install)
+> to start the server on the Raspberry Pi!
 
-The backend to view and control your PiCamera on your Raspberry Pi, with support for the Waveshare Pan-tilt HAT!
+The server to view and control your PiCamera on your Raspberry Pi, with support for the Waveshare Pan-tilt HAT!
 
-The frontend can be found 
-at [https://github.com/UnsignedArduino/picamera-server](https://github.com/UnsignedArduino/picamera-server).
+The web-based viewer can be found at 
+[https://github.com/UnsignedArduino/picamera-server-viewer](https://github.com/UnsignedArduino/picamera-server-viewer).
 
 ## Install
 
@@ -33,4 +33,4 @@ a couple of hours, so if you want to keep the camera permanently accessible
 without having to restart the tunnel, you will want to add your auth token 
 after signing up for ngrok.
 
-Note you must also follow the instructions to start the frontend server. 
+Note you must also follow the instructions to start the web viewer server. 
