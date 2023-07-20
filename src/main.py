@@ -278,7 +278,7 @@ stopped_captures = False
 
 async def capture():
     buf = BytesIO()
-    camera.capture(buf, "jpeg")
+    camera.capture(buf, "png")
     buf.seek(0)
     return b64encode(buf.read()).decode("utf-8")
 
