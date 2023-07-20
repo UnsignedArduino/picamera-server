@@ -1,11 +1,16 @@
+import asyncio
 import asyncio as aio
 import logging
+import os
 from base64 import b64encode
 from contextlib import asynccontextmanager
+from hashlib import scrypt
+from hmac import compare_digest
 from io import BytesIO
 from time import time as unix
 
 import uvicorn
+from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from picamera import PiCamera, PiCameraValueError
@@ -18,7 +23,15 @@ from logger import create_logger
 
 logger = create_logger(name=__name__, level=logging.DEBUG)
 
+load_dotenv()
+
 RATE_LIMIT = "60/minute"
+SCRYPT_SALT_LEN = 64
+SCRYPT_N = 2 ** 14
+SCRYPT_R = 8
+SCRYPT_P = 1
+SCRYPT_KEY_LEN = 64
+AUTHENTICATE_TIMEOUT = 10
 
 camera = None
 pwm = None
@@ -369,6 +382,26 @@ app.add_middleware(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+
+async def authenticate_ws(ws: WebSocket) -> bool:
+    logger.debug("Challenging websocket")
+    password = os.getenv("PASSWORD", "")
+    salt = os.urandom(SCRYPT_SALT_LEN)
+    await ws.send_bytes(salt)
+    try:
+        client_hash = await asyncio.wait_for(ws.receive_bytes(), timeout=AUTHENTICATE_TIMEOUT)
+        server_hash = scrypt(password.encode(), salt=salt, n=SCRYPT_N, r=SCRYPT_R, p=SCRYPT_P, dklen=SCRYPT_KEY_LEN)
+        result = compare_digest(server_hash, client_hash)
+        if result:
+            logger.debug("Client passed authentication")
+        else:
+            logger.debug("Client failed authentication")
+        return result
+    except TimeoutError:
+        logger.debug("Client authentication timeout")
+        return False
+
+
 stream_clients: list[WebSocket] = []
 
 
@@ -376,6 +409,10 @@ stream_clients: list[WebSocket] = []
 async def websocket_stream(ws: WebSocket):
     global stream_fps
     await ws.accept()
+    if not await authenticate_ws(ws):
+        logger.debug("Closing unauthenticated websocket")
+        await ws.close(code=3001, reason="Incorrect password!")
+        return
     stream_clients.append(ws)
     logger.info("Client connected to websocket stream")
     try:
@@ -402,6 +439,10 @@ async def broadcast_control(message: object):
 async def websocket_control(ws: WebSocket):
     global settings, pan_tilt
     await ws.accept()
+    if not await authenticate_ws(ws):
+        logger.debug("Closing unauthenticated websocket")
+        await ws.close(code=3001, reason="Incorrect password!")
+        return
     control_clients.append(ws)
     logger.info("Client connect to websocket control")
     try:

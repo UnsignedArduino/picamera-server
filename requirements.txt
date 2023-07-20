@@ -4,3 +4,4 @@ websockets
 uvicorn[standard]
 slowapi
 smbus
+python-dotenv

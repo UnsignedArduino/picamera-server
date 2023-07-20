@@ -16,6 +16,8 @@ at [https://github.com/UnsignedArduino/picamera-server](https://github.com/Unsig
 3. Create a virtual environment.
 4. Install dependencies in `requirements.txt`.
 5. Install `ngrok`.
+6. Copy `.env.sample` to `.env` and add the password if desired. A blank 
+   password means that no password is set. 
 
 ## Development
 
