@@ -9,6 +9,7 @@ from hmac import compare_digest
 from io import BytesIO
 from time import time as unix
 
+import fastapi
 import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -446,60 +447,80 @@ async def websocket_control(ws: WebSocket):
     control_clients.append(ws)
     logger.info("Client connect to websocket control")
     try:
+        logger.debug("Broadcasting settings and pan-tilt")
+        await ws.send_json({
+            "type": "settings",
+            "settings": settings
+        })
+        await ws.send_json({
+            "type": "pan_tilt",
+            "pan_tilt": pan_tilt
+        })
         while True:
-            logger.debug("Broadcasting settings and pan-tilt")
-            await broadcast_control({
+            await ws.send_json({
+                "type": "performance",
+                "performance": {
+                    "Connected_clients": len(stream_clients),
+                    "Capture_FPS": round(capture_fps),
+                    "Stream_FPS": round(stream_fps)
+                }
+            })
+            try:
+                msg = await asyncio.wait_for(ws.receive_json(), timeout=1)
+                if msg["type"] == "settings":
+                    logger.debug("Received new settings to set")
+                    try:
+                        await apply_settings(msg["settings"])
+                    except PiCameraValueError as e:
+                        logger.warning("Failed to set new settings")
+                        logger.exception(e)
+                        await apply_settings(settings)
+                        await broadcast_control({
+                            "type": "status",
+                            "status": "Failed to update settings!",
+                        })
+                    else:
+                        logger.info("Set new settings successfully")
+                        settings = msg["settings"]
+                        await broadcast_control({
+                            "type": "status",
+                            "status": "Successfully updated settings!",
+                        })
+                elif msg["type"] == "pan_tilt":
+                    logger.debug("New pan-tilt")
+                    await apply_pan_tilt(msg["pan_tilt"])
+                    logger.info("Set new pan-tilt successfully")
+                    pan_tilt = msg["pan_tilt"]
+                    await broadcast_control({
+                        "type": "status",
+                        "status": "Successfully updated camera direction!",
+                    })
+                elif msg["type"] == "photo_request":
+                    logger.info("Photo request!")
+                    await broadcast_control({
+                        "type": "photo_request_result",
+                        "photo_request_result": await capture(),
+                    })
+                    await broadcast_control({
+                        "type": "status",
+                        "status": "Successfully taken photo!",
+                    })
+                else:
+                    logger.warning(f"Received message with unknown type: "
+                                   f"{msg['type']}")
+                logger.debug("Broadcasting settings and pan-tilt")
+                await broadcast_control({
                     "type": "settings",
                     "settings": settings
                 })
-            await broadcast_control({
+                await broadcast_control({
                     "type": "pan_tilt",
                     "pan_tilt": pan_tilt
                 })
-            logger.debug("Waiting for new message")
-            msg = await ws.receive_json()
-            if msg["type"] == "settings":
-                logger.debug("Received new settings to set")
-                try:
-                    await apply_settings(msg["settings"])
-                except PiCameraValueError as e:
-                    logger.warning("Failed to set new settings")
-                    logger.exception(e)
-                    await apply_settings(settings)
-                    await broadcast_control({
-                        "type": "status",
-                        "status": "Failed to update settings!",
-                    })
-                else:
-                    logger.info("Set new settings successfully")
-                    settings = msg["settings"]
-                    await broadcast_control({
-                        "type": "status",
-                        "status": "Successfully updated settings!",
-                    })
-            elif msg["type"] == "pan_tilt":
-                logger.debug("New pan-tilt")
-                await apply_pan_tilt(msg["pan_tilt"])
-                logger.info("Set new pan-tilt successfully")
-                pan_tilt = msg["pan_tilt"]
-                await broadcast_control({
-                    "type": "status",
-                    "status": "Successfully updated camera direction!",
-                })
-            elif msg["type"] == "photo_request":
-                logger.info("Photo request!")
-                await broadcast_control({
-                    "type": "photo_request_result",
-                    "photo_request_result": await capture(),
-                })
-                await broadcast_control({
-                    "type": "status",
-                    "status": "Successfully taken photo!",
-                })
-            else:
-                logger.warning(f"Received message with unknown type: {msg['type']}")
+            except (aio.TimeoutError, aio.CancelledError):
+                pass
             await aio.sleep(0)
-    except WebSocketDisconnect:
+    except (fastapi.WebSocketDisconnect, fastapi.WebSocketException):
         logger.info("Client disconnected from websocket control")
     finally:
         control_clients.remove(ws)
